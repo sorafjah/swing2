@@ -113,7 +113,7 @@
 <div class="screen show" id="scrTitle">
   <div class="card">
     <h1><span class="sub">SWING ACTION</span>びゅんびゅんスイング！</h1>
-    <button class="bigBtn c-blue" id="btnModeTA">🏁 タイムアタック<small>ひかる浮島を じゅんばんに とおろう</small></button>
+    <button class="bigBtn c-blue" id="btnModeTA">🏁 タイムアタック<small>コースをすすんで ゴールをめざそう</small></button>
     <button class="bigBtn c-orange" id="btnModeCO">✨ たまあつめ<small>90びょうで ひかるたまを あつめよう</small></button>
     <div class="howto">
       <b>【あそびかた】</b><br>
@@ -128,7 +128,7 @@
 <div class="screen" id="scrStage">
   <div class="card">
     <h2>ステージをえらぼう</h2>
-    <button class="bigBtn c-blue"   data-stage="0">ステージ1 まちなか<small>まっすぐコース・浮島7こ</small></button>
+    <button class="bigBtn c-blue"   data-stage="0">ステージ1 うんてい<small>柱から柱へ ジグザグスイング・ゴールをめざそう</small></button>
     <button class="bigBtn c-green"  data-stage="1">ステージ2 ビルのたに<small>まがりみちコース・浮島10こ</small></button>
     <button class="bigBtn c-orange" data-stage="2">ステージ3 けいこく<small>たかさがかわるコース・浮島10こ</small></button>
     <button class="bigBtn c-gray" id="btnStageBack">タイトルへもどる</button>
@@ -407,12 +407,13 @@ let stageBodies=[];      // 静的物理ボディ（片付け用）
 let anchors=[];          // 糸のアンカー候補 THREE.Vector3[]
 let rings=[];            // {center,mesh,beacon,passed}
 let orbs=[];             // {pos,mesh,glow,alive}
+let goal=null;           // うんてい用：ゴール地点 {center,group}
 let startPos=new THREE.Vector3(0,12,-10);
 
 function clearStage(){
   while(stageGroup.children.length) stageGroup.remove(stageGroup.children[0]);
   for(const b of stageBodies) world.removeBody(b);
-  stageBodies=[]; anchors=[]; rings=[]; orbs=[];
+  stageBodies=[]; anchors=[]; rings=[]; orbs=[]; goal=null;
 }
 
 function makeRingPath(seed,n,turn,hMin,hMax){
@@ -424,6 +425,20 @@ function makeRingPath(seed,n,turn,hMin,hMax){
     const step=30+rnd()*12;
     pos=pos.clone().add(new THREE.Vector3(Math.sin(ang)*step,0,Math.cos(ang)*step));
     pos.y=hMin+rnd()*(hMax-hMin);
+  }
+  return pts;
+}
+
+// うんてい用：左右にジグザグしながら奥（-Z方向）へ進むパス
+function makeZigzagPath(seed,n,spacing,amp,hBase,hVar){
+  const rnd=mulberry32(seed); const pts=[];
+  let z=-38;
+  for(let i=0;i<n;i++){
+    z-=spacing+(rnd()-0.5)*3;
+    const side=(i%2===0)?-1:1;
+    const x=side*(amp+(rnd()-0.5)*3);
+    const y=hBase+(rnd()-0.5)*hVar;
+    pts.push(new THREE.Vector3(x,y,z));
   }
   return pts;
 }
@@ -525,6 +540,59 @@ function buildCanyon(seed,pathPts){
   hemi.color.set(0xffe8c8); hemi.groundColor.set(0x8a6a3e);
 }
 
+// うんてい：柱から柱へジグザグにスイングして進み、大きなゴールを目指すだけの、いちばんやさしいコース
+function buildUntei(seed,pathPts){
+  const rnd=mulberry32(seed);
+  function post(x,z,topY){
+    const r=0.85;
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(r,r*1.2,topY,10),
+      new THREE.MeshLambertMaterial({color:0xd8dde3}));
+    pole.position.set(x,topY/2,z); stageGroup.add(pole);
+    const stripe=new THREE.Mesh(new THREE.CylinderGeometry(r*1.02,r*1.02,1.2,10),
+      new THREE.MeshLambertMaterial({color:0xff8c42}));
+    stripe.position.set(x,topY*0.72,z); stageGroup.add(stripe);
+    const cap=new THREE.Mesh(new THREE.SphereGeometry(r*1.2,12,10),
+      new THREE.MeshLambertMaterial({color:0xffe259}));
+    cap.position.set(x,topY+0.3,z); stageGroup.add(cap);
+    const b=new CANNON.Body({mass:0,shape:new CANNON.Cylinder(r,r*1.2,topY,10)});
+    b.position.set(x,topY/2,z); world.addBody(b); stageBodies.push(b);
+    anchors.push(new THREE.Vector3(x,topY+0.7,z));
+  }
+  // 出発直後にもう1本、案内がわりに立てる
+  post(0,-24,11);
+  // 柱をジグザグに配置（＝スイングの中継ポイント。ここに正確に乗る必要はない）
+  for(const p of pathPts){
+    post(p.x, p.z, Math.max(9,p.y-2.2));
+  }
+  // 大きなゴールゲート（最後の柱のさらに先。近づくだけでクリア）
+  const last=pathPts[pathPts.length-1];
+  const gCenter=new THREE.Vector3(0, last.y+2, last.z-18);
+  const gGroup=new THREE.Group(); gGroup.position.copy(gCenter); stageGroup.add(gGroup);
+  const ringMat=new THREE.MeshBasicMaterial({color:0xffe259});
+  const arch=new THREE.Mesh(new THREE.TorusGeometry(8,0.6,12,32),ringMat);
+  gGroup.add(arch);
+  for(const side of [-1,1]){
+    const pillarG=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,gCenter.y,10),
+      new THREE.MeshLambertMaterial({color:0xffb238}));
+    pillarG.position.set(side*8,-gCenter.y/2,0); gGroup.add(pillarG);
+  }
+  const beacon=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,300,10,1,true),
+    new THREE.MeshBasicMaterial({color:0xffe259,transparent:true,opacity:0.3,
+      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+  beacon.position.set(0,150,0); gGroup.add(beacon);
+  const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0xffe259,
+    transparent:true,opacity:0.95,blending:THREE.AdditiveBlending,depthWrite:false}));
+  glow.scale.set(24,24,1); gGroup.add(glow);
+  goal={center:gCenter.clone(),group:gGroup,mesh:arch};
+
+  const g=new THREE.Mesh(new THREE.PlaneGeometry(1400,1400),
+    new THREE.MeshLambertMaterial({color:0x9fd888}));
+  g.rotation.x=-Math.PI/2; stageGroup.add(g);
+  scene.background=new THREE.Color(0xbfe8ff);
+  scene.fog=new THREE.Fog(0xbfe8ff,90,420);
+  hemi.color.set(0xdff3ff); hemi.groundColor.set(0x6fae5e);
+}
+
 function buildStartPad(){
   const pad=new THREE.Mesh(new THREE.CylinderGeometry(4,4.5,1.2,16),
     new THREE.MeshLambertMaterial({color:0x5fd48a}));
@@ -590,7 +658,7 @@ function buildOrbs(seed,count){
 }
 
 const STAGE_DEFS=[
-  {name:'ステージ1 まちなか', env:'city',   seed:101, n:7,  turn:0.55, hMin:14, hMax:24},
+  {name:'ステージ1 うんてい', env:'untei', seed:101, n:8, spacing:15, amp:12, hBase:14, hVar:3},
   {name:'ステージ2 ビルのたに', env:'city',  seed:202, n:10, turn:1.15, hMin:12, hMax:32},
   {name:'ステージ3 けいこく', env:'canyon', seed:303, n:10, turn:0.9,  hMin:16, hMax:40},
 ];
@@ -599,9 +667,14 @@ function loadStage(mode,stageIdx){
   clearStage();
   if(mode==='ta'){
     const def=STAGE_DEFS[stageIdx];
-    const pts=makeRingPath(def.seed,def.n,def.turn,def.hMin,def.hMax);
-    if(def.env==='city') buildCity(def.seed+7,pts); else buildCanyon(def.seed+7,pts);
-    buildRings(pts);
+    if(def.env==='untei'){
+      const pts=makeZigzagPath(def.seed,def.n,def.spacing,def.amp,def.hBase,def.hVar);
+      buildUntei(def.seed+7,pts);          // ゴール方式：浮島の精密判定はナシ
+    }else{
+      const pts=makeRingPath(def.seed,def.n,def.turn,def.hMin,def.hMax);
+      if(def.env==='city') buildCity(def.seed+7,pts); else buildCanyon(def.seed+7,pts);
+      buildRings(pts);
+    }
   }else{
     const pts=makeRingPath(500,8,1.4,12,30); // ビル高さ確保用のダミーパス
     buildCity(507,pts);
@@ -619,7 +692,7 @@ const S={ state:'title', mode:'ta', stageIdx:0,
   steer:0, faceDir:new THREE.Vector3(0,0,-1), camMode:'tps',
   fov:64, roll:0, bodyLean:0, missT:0, retryT:0, lastCP:new THREE.Vector3(),
   spinning:false, spinT:0, spinDur:0, spinTotal:0,
-  combo:0, comboMax:0 };
+  combo:0, comboMax:0, introT:0 };
 
 const el={
   hud:document.getElementById('hud'), hudMain:document.getElementById('hudMain'),
@@ -670,9 +743,10 @@ function startGame(mode,stageIdx){
   S.mode=mode; S.stageIdx=stageIdx;
   loadStage(mode,stageIdx);
   S.time=(mode==='ta')?0:S.timeLimit;
-  S.ringIdx=0; S.orbCount=0; S.combo=0; S.comboMax=0;
+  S.ringIdx=0; S.orbCount=0; S.combo=0; S.comboMax=0; S.introT=1.7;
   S.lastCP.copy(startPos);
   resetPlayer(startPos);
+  S.faceDir.set(0,0,-1);
   S.state='count'; showScreen('scrCount');
   let c=3; el.countNum.textContent=c; sfx.count();
   const iv=setInterval(()=>{
@@ -731,6 +805,7 @@ function pickAnchor(){
   if(speed>4){ tmpV2.set(v.x,v.y,v.z).normalize(); tmpV1.lerp(tmpV2,0.35); }
   tmpV1.y=Math.max(tmpV1.y,0.18); tmpV1.normalize();
   const pp=playerBody.position;
+  const target=(S.mode==='ta')?(goal?goal.center:(rings[S.ringIdx]?rings[S.ringIdx].center:null)):null;
   let best=null,bestScore=1e9;
   for(const a of anchors){
     tmpV3.set(a.x-pp.x,a.y-pp.y,a.z-pp.z);
@@ -740,7 +815,20 @@ function pickAnchor(){
     tmpV3.multiplyScalar(1/d);
     const ang=Math.acos(clamp(tmpV3.dot(tmpV1),-1,1));
     if(ang>0.85) continue;                  // 視野コーン約49°
-    const score=ang*40+Math.abs(d-30)*0.35+(a.y<pp.y+3?8:0);
+    // 近い柱を優先し、タイムアタック中はつぎの目標に近いアンカーへ誘導する
+    let score=ang*40+d*0.1+(a.y<pp.y+3?8:0);
+    if(target) score+=a.distanceTo(target)*0.3;
+    if(score<bestScore){ bestScore=score; best=a; }
+  }
+  if(best) return best;
+  // フォールバック：「とどかない」を極力なくす。条件を大幅に緩めて、
+  // それでも一番マシな（近くて・低すぎない）アンカーへつなげる
+  bestScore=1e9;
+  for(const a of anchors){
+    const d=pp.distanceTo(a);
+    if(d<3||d>140) continue;
+    let score=d;
+    if(target) score+=a.distanceTo(target)*0.4;
     if(score<bestScore){ bestScore=score; best=a; }
   }
   return best;
@@ -773,7 +861,7 @@ function releaseRope(boost){
       v.scale(f,v);
       if(v.y>-3) v.y+=1.6;                 // ふわっと持ち上げ
       const m=v.length();
-      if(m>38) v.scale(38/m,v);
+      if(m>32) v.scale(32/m,v);
     }
     sfx.release();
     // 指をはなして糸が消えたら、くるっと1〜3回転する演出
@@ -892,6 +980,20 @@ function updateCamera(dt){
   const fps=(S.state==='play'&&S.camMode==='fps');
   const top=(S.state==='play'&&S.camMode==='top');
 
+  // ---- スタート演出：さいしょに正面（顔）を見せてから背後へ回りこむ ----
+  if(S.state==='count'&&S.introT>0){
+    S.introT-=dt;
+    tmpV2.copy(pp).addScaledVector(S.faceDir,3.6); tmpV2.y+=1.7;
+    camPos.lerp(tmpV2,1-Math.exp(-4*dt));
+    camera.position.copy(camPos);
+    S.fov=lerp(S.fov,58,1-Math.exp(-4*dt));
+    if(Math.abs(camera.fov-S.fov)>0.05){ camera.fov=S.fov; camera.updateProjectionMatrix(); }
+    camera.up.set(0,1,0);
+    tmpV3.copy(pp); tmpV3.y+=0.3;
+    camera.lookAt(tmpV3);
+    return;
+  }
+
   if(fps){
     // ---- 一人称：頭の位置から進行方向を見る ----
     tmpV2.copy(pp).addScaledVector(S.faceDir,0.15); tmpV2.y+=0.4;
@@ -959,7 +1061,10 @@ function updateHud(){
   const comboTxt=S.combo>=2?'　🔥コンボx'+S.combo:'';
   if(S.mode==='ta'){
     main=fmtTime(S.time);
-    if(S.ringIdx<rings.length){
+    if(goal){
+      const d=Math.round(player.position.distanceTo(goal.center));
+      sub='ゴールまで '+d+'m'+comboTxt;
+    }else if(S.ringIdx<rings.length){
       const d=Math.round(player.position.distanceTo(rings[S.ringIdx].center));
       sub='浮島 '+S.ringIdx+' / '+rings.length+'　つぎまで '+d+'m'+comboTxt;
     }
@@ -1012,14 +1117,19 @@ function animate(){
       }
       // 最高速クランプ
       const v=playerBody.velocity, sp=v.length();
-      if(sp>38) v.scale(38/sp,v);
+      if(sp>32) v.scale(32/sp,v);
       world.step(1/60,dt,4);
 
       // ---- ゲーム進行 ----
       if(S.mode==='ta'){
         S.time+=dt;
+        if(goal){
+          if(player.position.distanceTo(goal.center)<13.0){
+            finishGame(true);
+          }
+        }else{
         const ring=rings[S.ringIdx];
-        if(ring&&player.position.distanceTo(ring.center)<6.0){
+        if(ring&&player.position.distanceTo(ring.center)<7.0){
           ring.passed=true; S.ringIdx++; S.lastCP.copy(ring.center); sfx.ring();
           S.combo++; S.comboMax=Math.max(S.comboMax,S.combo);
           if(S.combo>=2){
@@ -1030,6 +1140,7 @@ function animate(){
           }
           updateRingColors(S.ringIdx);
           if(S.ringIdx>=rings.length) finishGame(true);
+        }
         }
       }else{
         S.time-=dt;
@@ -1132,7 +1243,7 @@ showScreen('scrTitle');
 animate();
 
 // ヘッドレステスト用フック
-window.__game={S,playerBody,player,camera,anchorBody,get rings(){return rings;},get orbs(){return orbs;},startGame,tryAttach,releaseRope,pickAnchor,anchorsRef:()=>anchors};
+window.__game={S,playerBody,player,camera,anchorBody,get rings(){return rings;},get orbs(){return orbs;},get goal(){return goal;},startGame,tryAttach,releaseRope,pickAnchor,anchorsRef:()=>anchors};
 </script>
 </body>
 </html>

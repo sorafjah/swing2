@@ -37,13 +37,6 @@
   #btnView:active { transform:scale(.94); }
 
   /* ---------- 空中制御ボタン ---------- */
-  .steerBtn { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 18px); z-index:11;
-    width:88px; height:88px; border-radius:50%; border:3px solid rgba(255,255,255,.55);
-    background:rgba(255,255,255,.22); color:#fff; font-size:38px; font-family:inherit;
-    display:none; align-items:center; justify-content:center; backdrop-filter:blur(3px);
-    text-shadow:0 2px 4px rgba(0,0,0,.5); }
-  .steerBtn.on { background:rgba(255,220,90,.45); border-color:#ffd54f; }
-  #btnL { left:18px; } #btnR { right:18px; }
 
   /* ---------- 照準・アンカーマーカー ---------- */
   #reticle { position:fixed; left:50%; top:46%; width:14px; height:14px; margin:-7px 0 0 -7px;
@@ -102,8 +95,6 @@
 <div id="hud"><div id="hudCard"><div id="hudMain">0:00.0</div><div id="hudSub"></div></div></div>
 <button id="btnBack">もどる</button>
 <button id="btnView">👁 一人称</button>
-<div class="steerBtn" id="btnL">←</div>
-<div class="steerBtn" id="btnR">→</div>
 <div id="reticle"></div>
 <div id="marker"></div>
 <div id="missMsg">とどかない…</div>
@@ -569,8 +560,6 @@ function buildUntei(seed,pathPts){
     b.position.set(x,topY/2,z); world.addBody(b); stageBodies.push(b);
     anchors.push(new THREE.Vector3(x,topY+0.7,z));
   }
-  // 出発直後にもう1本、案内がわりに立てる（スタート台とおなじくらいの高さ）
-  post(0,-24,pathPts[0].y-2);
   // 柱をジグザグに配置（＝スイングの中継ポイント。ここに正確に乗る必要はない）
   for(const p of pathPts){
     post(p.x, p.z, Math.max(20,p.y-2.2));
@@ -593,10 +582,6 @@ function buildUntei(seed,pathPts){
       new THREE.MeshBasicMaterial({color:0xff5252}));
     flag.position.set(side*halfW,postTop+2.2,0); gGroup.add(flag);
   }
-  const beacon=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,300,10,1,true),
-    new THREE.MeshBasicMaterial({color:0xffe259,transparent:true,opacity:0.3,
-      blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
-  beacon.position.set(0,150,0); gGroup.add(beacon);
   const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0xffe259,
     transparent:true,opacity:0.95,blending:THREE.AdditiveBlending,depthWrite:false}));
   glow.scale.set(24,24,1); gGroup.add(glow);
@@ -684,7 +669,7 @@ function buildOrbs(seed,count){
 }
 
 const STAGE_DEFS=[
-  {name:'ステージ1 うんてい', env:'untei', seed:101, n:8, spacing:16, amp:13, hBase:30, hVar:6, countdown:true, timeLimit:90},
+  {name:'ステージ1 うんてい', env:'untei', seed:101, n:8, spacing:16, amp:20, hBase:30, hVar:6, countdown:true, timeLimit:90},
   {name:'ステージ2 ビルのたに', env:'city',  seed:202, n:10, turn:1.15, hMin:12, hMax:32},
   {name:'ステージ3 けいこく', env:'canyon', seed:303, n:10, turn:0.9,  hMin:16, hMax:40},
 ];
@@ -717,16 +702,15 @@ function loadStage(mode,stageIdx){
 const S={ state:'title', mode:'ta', stageIdx:0,
   time:0, ringIdx:0, orbCount:0, timeLimit:90,
   attached:false, holding:false, constraint:null, restLen:0,
-  steer:0, faceDir:new THREE.Vector3(0,0,-1), camMode:'tps',
+  faceDir:new THREE.Vector3(0,0,-1), camMode:'tps',
   fov:64, roll:0, bodyLean:0, missT:0, retryT:0, lastCP:new THREE.Vector3(),
   spinning:false, spinT:0, spinDur:0, spinTotal:0,
-  combo:0, comboMax:0, introT:0, groundAttachT:-1, prevZ:null };
+  combo:0, comboMax:0, introT:0, groundAttachT:-1, groundCrawlT:0, prevZ:null };
 
 const el={
   hud:document.getElementById('hud'), hudMain:document.getElementById('hudMain'),
   hudSub:document.getElementById('hudSub'), btnBack:document.getElementById('btnBack'),
   btnView:document.getElementById('btnView'),
-  btnL:document.getElementById('btnL'), btnR:document.getElementById('btnR'),
   reticle:document.getElementById('reticle'), marker:document.getElementById('marker'),
   missMsg:document.getElementById('missMsg'),
   popup:document.getElementById('popup'),
@@ -742,7 +726,6 @@ function showScreen(name){
   el.hud.style.display=(S.state==='play'||S.state==='count')?'flex':'none';
   el.btnBack.style.display=(S.state==='play')?'block':'none';
   el.btnView.style.display=(S.state==='play')?'block':'none';
-  el.btnL.style.display=el.btnR.style.display=(S.state==='play')?'flex':'none';
   el.reticle.style.display=(S.state==='play')?'block':'none';
   if(!playing){ el.marker.style.display='none'; }
 }
@@ -765,6 +748,7 @@ function resetPlayer(pos){
   S.faceDir.set(0,0,-1);
   S.spinning=false; S.spinT=0;
   S.combo=0;
+  S.groundCrawlT=0;
 }
 
 function startGame(mode,stageIdx){
@@ -939,17 +923,6 @@ function tryAttach(){
 /* =========================================================
    入力
 ========================================================= */
-function bindSteer(btn,dir){
-  btn.addEventListener('pointerdown',e=>{
-    e.preventDefault(); e.stopPropagation();
-    btn.setPointerCapture(e.pointerId);
-    S.steer=dir; btn.classList.add('on'); resumeAudio();
-  });
-  const off=e=>{ e.preventDefault(); if(S.steer===dir) S.steer=0; btn.classList.remove('on'); };
-  btn.addEventListener('pointerup',off);
-  btn.addEventListener('pointercancel',off);
-}
-bindSteer(el.btnL,-1); bindSteer(el.btnR,1);
 
 renderer.domElement.addEventListener('pointerdown',e=>{
   e.preventDefault(); resumeAudio();
@@ -1142,11 +1115,6 @@ function animate(){
   if(S.state==='play'||S.state==='count'){
     // ---- 物理 ----
     if(S.state==='play'){
-      // 空中制御（カメラ右方向へ力）
-      if(S.steer!==0){
-        tmpV1.set(-S.faceDir.z,0,S.faceDir.x);
-        playerBody.applyForce(new CANNON.Vec3(tmpV1.x*13*S.steer,0,tmpV1.z*13*S.steer));
-      }
       if(S.attached&&S.constraint){
         // リール：糸を少しずつ巻いて「ふわっ」と持ち上げる
         const minLen=Math.max(6,S.restLen*0.45);
@@ -1184,6 +1152,17 @@ function animate(){
       const v=playerBody.velocity, sp=v.length();
       if(sp>32) v.scale(32/sp,v);
       world.step(1/60,dt,4);
+
+      // 糸をつかんでいない状態で地面を這うのは3秒まで：こえたら自動で浮き上がる
+      if(!S.attached&&playerBody.position.y<P_RADIUS+2.5){
+        S.groundCrawlT+=dt;
+        if(S.groundCrawlT>3){
+          playerBody.velocity.y=Math.max(playerBody.velocity.y,11);
+          S.groundCrawlT=0;
+        }
+      }else{
+        S.groundCrawlT=0;
+      }
 
       // ---- ゲーム進行 ----
       if(S.mode==='ta'){

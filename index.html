@@ -46,6 +46,12 @@
   #marker::before { content:''; position:absolute; inset:0; border:3px solid #ffe259;
     border-radius:50%; box-shadow:0 0 10px #ffe259; animation:mk 1s infinite; }
   @keyframes mk { 0%{transform:scale(1)} 50%{transform:scale(1.18)} 100%{transform:scale(1)} }
+  #joyRing { position:fixed; width:132px; height:132px; margin:-66px 0 0 -66px; z-index:8;
+    border-radius:50%; border:3px solid rgba(255,255,255,.55); background:rgba(255,255,255,.10);
+    display:none; pointer-events:none; }
+  #joyKnob { position:absolute; left:50%; top:50%; width:52px; height:52px;
+    border-radius:50%; background:rgba(255,230,100,.75); box-shadow:0 2px 8px rgba(0,0,0,.3);
+    transition:background .1s; }
   #missMsg { position:fixed; left:50%; top:38%; transform:translateX(-50%); z-index:9;
     background:rgba(30,30,50,.75); color:#ffb3b3; font-size:20px; font-weight:700;
     padding:8px 18px; border-radius:14px; display:none; pointer-events:none; }
@@ -97,6 +103,7 @@
 <button id="btnView">👁 一人称</button>
 <div id="reticle"></div>
 <div id="marker"></div>
+<div id="joyRing"><div id="joyKnob"></div></div>
 <div id="missMsg">とどかない…</div>
 <div id="popup"></div>
 
@@ -701,11 +708,13 @@ function loadStage(mode,stageIdx){
 ========================================================= */
 const S={ state:'title', mode:'ta', stageIdx:0,
   time:0, ringIdx:0, orbCount:0, timeLimit:90,
-  attached:false, holding:false, constraint:null, restLen:0,
+  attached:false, holding:false, constraint:null, restLen:0, attachLen:0,
   faceDir:new THREE.Vector3(0,0,-1), camMode:'tps',
   fov:64, roll:0, bodyLean:0, missT:0, retryT:0, lastCP:new THREE.Vector3(),
   spinning:false, spinT:0, spinDur:0, spinTotal:0,
-  combo:0, comboMax:0, introT:0, groundAttachT:-1, groundCrawlT:0, prevZ:null };
+  combo:0, comboMax:0, introT:0, groundAttachT:-1, groundCrawlT:0, prevZ:null,
+  dragId:null, dragX0:0, dragY0:0, dragX:0, dragY:0 };
+const JOY_R=66;
 
 const el={
   hud:document.getElementById('hud'), hudMain:document.getElementById('hudMain'),
@@ -713,6 +722,7 @@ const el={
   btnView:document.getElementById('btnView'),
   reticle:document.getElementById('reticle'), marker:document.getElementById('marker'),
   missMsg:document.getElementById('missMsg'),
+  joyRing:document.getElementById('joyRing'), joyKnob:document.getElementById('joyKnob'),
   popup:document.getElementById('popup'),
   scrTitle:document.getElementById('scrTitle'), scrStage:document.getElementById('scrStage'),
   scrCount:document.getElementById('scrCount'), countNum:document.getElementById('countNum'),
@@ -727,7 +737,7 @@ function showScreen(name){
   el.btnBack.style.display=(S.state==='play')?'block':'none';
   el.btnView.style.display=(S.state==='play')?'block':'none';
   el.reticle.style.display=(S.state==='play')?'block':'none';
-  if(!playing){ el.marker.style.display='none'; }
+  if(!playing){ el.marker.style.display='none'; el.joyRing.style.display='none'; }
 }
 
 let popupTimer=null;
@@ -875,6 +885,7 @@ function attachRope(anchor){
   anchorBody.position.set(anchor.x,anchor.y,anchor.z);
   const d=playerBody.position.distanceTo(anchorBody.position);
   S.restLen=d*0.96;
+  S.attachLen=S.restLen;
   S.constraint=new CANNON.DistanceConstraint(playerBody,anchorBody,S.restLen,1e6);
   world.addConstraint(S.constraint);
   S.attached=true;
@@ -928,10 +939,24 @@ renderer.domElement.addEventListener('pointerdown',e=>{
   e.preventDefault(); resumeAudio();
   if(S.state!=='play') return;
   S.holding=true; tryAttach();
+  S.dragId=e.pointerId;
+  S.dragX0=e.clientX; S.dragY0=e.clientY;
+  S.dragX=e.clientX; S.dragY=e.clientY;
+  el.joyRing.style.left=e.clientX+'px'; el.joyRing.style.top=e.clientY+'px';
+  el.joyKnob.style.transform='translate(-50%,-50%)';
+  el.joyRing.style.display='block';
+});
+renderer.domElement.addEventListener('pointermove',e=>{
+  if(!S.holding||e.pointerId!==S.dragId) return;
+  e.preventDefault();
+  S.dragX=e.clientX; S.dragY=e.clientY;
+  const dx=clamp(S.dragX-S.dragX0,-JOY_R,JOY_R), dy=clamp(S.dragY-S.dragY0,-JOY_R,JOY_R);
+  el.joyKnob.style.transform='translate(calc(-50% + '+dx+'px),calc(-50% + '+dy+'px))';
 });
 function onRelease(e){
   if(e) e.preventDefault();
-  S.holding=false; S.retryT=0;
+  S.holding=false; S.retryT=0; S.dragId=null;
+  el.joyRing.style.display='none';
   if(S.state==='play'&&S.attached) releaseRope(true);
   el.missMsg.style.display='none';
 }
@@ -1115,11 +1140,24 @@ function animate(){
   if(S.state==='play'||S.state==='count'){
     // ---- 物理 ----
     if(S.state==='play'){
+      // ドラッグ入力（-1〜1）：横=左右に曲げる、縦=上でグイッと引き上げ／下でゆるめる
+      const dragActive=S.holding&&S.dragId!==null;
+      const dxN=dragActive?clamp((S.dragX-S.dragX0)/JOY_R,-1,1):0;
+      const dyN=dragActive?clamp((S.dragY-S.dragY0)/JOY_R,-1,1):0;
+
       if(S.attached&&S.constraint){
-        // リール：糸を少しずつ巻いて「ふわっ」と持ち上げる
+        // リール：ドラッグでスピードを調整しつつ、少しずつ巻いて「ふわっ」と持ち上げる
+        const reelRate=4.2-dyN*8;               // 上ドラッグ(dyN<0)で速く巻く、下ドラッグでゆるめる
         const minLen=Math.max(6,S.restLen*0.45);
-        S.restLen=Math.max(minLen,S.restLen-4.2*dt);
+        const maxLen=S.attachLen||S.restLen;
+        S.restLen=clamp(S.restLen-reelRate*dt,minLen,maxLen);
         S.constraint.distance=S.restLen;
+        // 左右ドラッグ：軌道を曲げる
+        if(Math.abs(dxN)>0.04){
+          tmpV4.set(-S.faceDir.z,0,S.faceDir.x);
+          const f=dxN*15;
+          playerBody.applyForce(new CANNON.Vec3(tmpV4.x*f,0,tmpV4.z*f));
+        }
         // 地面ちかくでつかんだ場合：3秒以内にかならず浮き上がる補助力
         if(S.groundAttachT>=0){
           S.groundAttachT+=dt;
@@ -1147,6 +1185,12 @@ function animate(){
       }else if(S.holding){
         S.retryT-=dt;
         if(S.retryT<=0){ S.retryT=0.18; const a=pickAnchor(); if(a){ sfx.shoot(); attachRope(a); el.missMsg.style.display='none'; } }
+        // 未吸着中も、ドラッグで軽く空中制御できる
+        if(Math.abs(dxN)>0.04){
+          tmpV4.set(-S.faceDir.z,0,S.faceDir.x);
+          const f=dxN*8;
+          playerBody.applyForce(new CANNON.Vec3(tmpV4.x*f,0,tmpV4.z*f));
+        }
       }
       // 最高速クランプ
       const v=playerBody.velocity, sp=v.length();

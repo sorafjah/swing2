@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>びゅんびゅんスイング！</title>
+<title>スウィングでGO♪</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
@@ -112,7 +112,7 @@
 <!-- タイトル -->
 <div class="screen show" id="scrTitle">
   <div class="card">
-    <h1><span class="sub">SWING ACTION</span>びゅんびゅんスイング！</h1>
+    <h1><span class="sub">SWING ACTION</span>スウィングでGO♪</h1>
     <button class="bigBtn c-blue" id="btnModeTA">🏁 タイムアタック<small>コースをすすんで ゴールをめざそう</small></button>
     <button class="bigBtn c-orange" id="btnModeCO">✨ たまあつめ<small>90びょうで ひかるたまを あつめよう</small></button>
     <div class="howto">
@@ -307,52 +307,63 @@ playerBody.addEventListener('collide',e=>{
 });
 
 const player=new THREE.Group();
+const HAND_OFFSET=new THREE.Vector3(-0.53,0.74,-0.17); // あげた手の位置（糸の発射点）
 {
-  const bodyMat=new THREE.MeshLambertMaterial({color:0xff7043});
-  const body=new THREE.Mesh(new THREE.SphereGeometry(P_RADIUS,20,16),bodyMat);
-  body.scale.y=1.05; player.add(body);
-  const eyeG=new THREE.SphereGeometry(0.13,10,8);
+  const skinRed=new THREE.MeshLambertMaterial({color:0xe6392e});
+  const limbBlue=new THREE.MeshLambertMaterial({color:0x2f6fe0});
+  const handCol=new THREE.MeshLambertMaterial({color:0xffe259});
+
+  // 頭（赤）
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.27,18,14),skinRed);
+  head.position.y=0.66; player.add(head);
+  const eyeG=new THREE.SphereGeometry(0.055,10,8);
   const eyeM=new THREE.MeshBasicMaterial({color:0xffffff});
   const pupM=new THREE.MeshBasicMaterial({color:0x222233});
-  for(const sx of [-0.2,0.2]){
-    const e=new THREE.Mesh(eyeG,eyeM); e.position.set(sx,0.2,-0.44); player.add(e);
-    const p=new THREE.Mesh(new THREE.SphereGeometry(0.06,8,6),pupM);
-    p.position.set(sx,0.2,-0.55); player.add(p);
+  for(const sx of [-0.1,0.1]){
+    const e=new THREE.Mesh(eyeG,eyeM); e.position.set(sx,0.68,-0.23); player.add(e);
+    const p=new THREE.Mesh(new THREE.SphereGeometry(0.028,8,6),pupM);
+    p.position.set(sx,0.68,-0.27); player.add(p);
   }
-  const band=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.08,8,20),
-    new THREE.MeshLambertMaterial({color:0xffe259}));
-  band.rotation.x=Math.PI/2; band.position.y=0.32; player.add(band);
+  // 胴体（赤・直方体）
+  const torso=new THREE.Mesh(new THREE.BoxGeometry(0.52,0.62,0.34),skinRed);
+  torso.position.y=0.24; player.add(torso);
+  // 腰・脚のつけね（青）
+  const hip=new THREE.Mesh(new THREE.SphereGeometry(0.24,14,10),limbBlue);
+  hip.scale.set(1.1,0.7,0.85); hip.position.y=-0.14; player.add(hip);
 
-  // 猫耳（あたまの上、まえよりに少し外向き）
-  const earMat=new THREE.MeshLambertMaterial({color:0xff8a5c});
-  for(const sx of [-1,1]){
-    const ear=new THREE.Mesh(new THREE.ConeGeometry(0.22,0.42,10),earMat);
-    ear.position.set(sx*0.34,0.62,-0.12);
-    ear.rotation.z=sx*0.45; ear.rotation.x=-0.25;
-    player.add(ear);
-    const inner=new THREE.Mesh(new THREE.ConeGeometry(0.12,0.26,10),
-      new THREE.MeshLambertMaterial({color:0xffc9a8}));
-    inner.position.copy(ear.position); inner.position.z+=0.05;
-    inner.rotation.copy(ear.rotation); inner.scale.set(0.9,0.85,0.9);
-    player.add(inner);
+  // 腕を作るヘルパー（付け根＝グループ原点、下方向へ伸びる）
+  function makeLimb(mat,length,rTop,rBot,handColor){
+    const g=new THREE.Group();
+    const mesh=new THREE.Mesh(new THREE.CylinderGeometry(rTop,rBot,length,8),mat);
+    mesh.position.y=-length/2; g.add(mesh);
+    if(handColor){
+      const hand=new THREE.Mesh(new THREE.SphereGeometry(rTop*1.3,10,8),handColor);
+      hand.position.y=-length; g.add(hand);
+    }
+    return g;
   }
 
-  // しっぽ（うしろ側、ふわっと上に反った羽根）
-  const tail=new THREE.Group();
-  const segMat=new THREE.MeshLambertMaterial({color:0xff7043});
-  const segCount=4;
-  for(let i=0;i<segCount;i++){
-    const t=i/(segCount-1);
-    const r=lerpNum(0.18,0.07,t);
-    const seg=new THREE.Mesh(new THREE.SphereGeometry(r,10,8),i===segCount-1?
-      new THREE.MeshLambertMaterial({color:0xffe259}):segMat);
-    const ang=t*1.1;
-    seg.position.set(0, 0.15+Math.sin(ang)*0.55, 0.42+Math.cos(ang)*0.1+t*0.32);
-    tail.add(seg);
+  // さげた腕（右・青）
+  const armDown=makeLimb(limbBlue,0.48,0.085,0.075,handCol);
+  armDown.position.set(0.36,0.36,0); armDown.rotation.z=0.62; armDown.rotation.x=0.12;
+  player.add(armDown);
+
+  // あげた腕（左・青）：ななめ上・まえに伸ばす。ここから糸が出る
+  const armUp=makeLimb(limbBlue,0.48,0.085,0.075,handCol);
+  armUp.position.set(-0.33,0.34,0);
+  armUp.rotation.z=-Math.PI*0.86; armUp.rotation.x=-0.4;
+  player.add(armUp);
+
+  // 脚（青）
+  for(const sx of [-0.15,0.15]){
+    const leg=makeLimb(limbBlue,0.5,0.11,0.09,null);
+    leg.position.set(sx,-0.28,0); leg.rotation.z=sx*0.15;
+    player.add(leg);
+    const foot=new THREE.Mesh(new THREE.SphereGeometry(0.11,10,8),limbBlue);
+    foot.position.set(sx-sx*0.1,-0.78,0.05); foot.scale.set(1,0.7,1.3);
+    player.add(foot);
   }
-  player.add(tail);
 }
-function lerpNum(a,b,t){ return a+(b-a)*t; }
 scene.add(player);
 
 // 糸（ロープ）
@@ -544,37 +555,43 @@ function buildCanyon(seed,pathPts){
 function buildUntei(seed,pathPts){
   const rnd=mulberry32(seed);
   function post(x,z,topY){
-    const r=0.85;
+    const r=1.35;
     const pole=new THREE.Mesh(new THREE.CylinderGeometry(r,r*1.2,topY,10),
       new THREE.MeshLambertMaterial({color:0xd8dde3}));
     pole.position.set(x,topY/2,z); stageGroup.add(pole);
-    const stripe=new THREE.Mesh(new THREE.CylinderGeometry(r*1.02,r*1.02,1.2,10),
+    const stripe=new THREE.Mesh(new THREE.CylinderGeometry(r*1.02,r*1.02,1.6,10),
       new THREE.MeshLambertMaterial({color:0xff8c42}));
-    stripe.position.set(x,topY*0.72,z); stageGroup.add(stripe);
-    const cap=new THREE.Mesh(new THREE.SphereGeometry(r*1.2,12,10),
+    stripe.position.set(x,topY*0.8,z); stageGroup.add(stripe);
+    const cap=new THREE.Mesh(new THREE.SphereGeometry(r*1.15,12,10),
       new THREE.MeshLambertMaterial({color:0xffe259}));
     cap.position.set(x,topY+0.3,z); stageGroup.add(cap);
     const b=new CANNON.Body({mass:0,shape:new CANNON.Cylinder(r,r*1.2,topY,10)});
     b.position.set(x,topY/2,z); world.addBody(b); stageBodies.push(b);
     anchors.push(new THREE.Vector3(x,topY+0.7,z));
   }
-  // 出発直後にもう1本、案内がわりに立てる
-  post(0,-24,11);
+  // 出発直後にもう1本、案内がわりに立てる（スタート台とおなじくらいの高さ）
+  post(0,-24,pathPts[0].y-2);
   // 柱をジグザグに配置（＝スイングの中継ポイント。ここに正確に乗る必要はない）
   for(const p of pathPts){
-    post(p.x, p.z, Math.max(9,p.y-2.2));
+    post(p.x, p.z, Math.max(20,p.y-2.2));
   }
-  // 大きなゴールゲート（最後の柱のさらに先。近づくだけでクリア）
+  // 大きなゴールゲート（最後の柱のさらに先。門のあいだをくぐって奥へ抜けたらクリア）
   const last=pathPts[pathPts.length-1];
+  const halfW=7.5, postTop=9;              // 横木のあるゲート柱の高さ（ゴール中心からの相対）
   const gCenter=new THREE.Vector3(0, last.y+2, last.z-18);
+  // ゲートの柱は地面から生やす（既存のpost関数を再利用。スイングのアンカーにもなる）
+  post(-halfW, gCenter.z, gCenter.y+postTop);
+  post(halfW, gCenter.z, gCenter.y+postTop);
   const gGroup=new THREE.Group(); gGroup.position.copy(gCenter); stageGroup.add(gGroup);
-  const ringMat=new THREE.MeshBasicMaterial({color:0xffe259});
-  const arch=new THREE.Mesh(new THREE.TorusGeometry(8,0.6,12,32),ringMat);
-  gGroup.add(arch);
+  // 上の横木（ここをくぐる）
+  const beam=new THREE.Mesh(new THREE.BoxGeometry(halfW*2+2.4,1.3,1.3),
+    new THREE.MeshBasicMaterial({color:0xffe259}));
+  beam.position.y=postTop; gGroup.add(beam);
+  // 旗（左右の柱の上、目印）
   for(const side of [-1,1]){
-    const pillarG=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.0,gCenter.y,10),
-      new THREE.MeshLambertMaterial({color:0xffb238}));
-    pillarG.position.set(side*8,-gCenter.y/2,0); gGroup.add(pillarG);
+    const flag=new THREE.Mesh(new THREE.ConeGeometry(1.1,1.8,8),
+      new THREE.MeshBasicMaterial({color:0xff5252}));
+    flag.position.set(side*halfW,postTop+2.2,0); gGroup.add(flag);
   }
   const beacon=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,300,10,1,true),
     new THREE.MeshBasicMaterial({color:0xffe259,transparent:true,opacity:0.3,
@@ -583,7 +600,7 @@ function buildUntei(seed,pathPts){
   const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0xffe259,
     transparent:true,opacity:0.95,blending:THREE.AdditiveBlending,depthWrite:false}));
   glow.scale.set(24,24,1); gGroup.add(glow);
-  goal={center:gCenter.clone(),group:gGroup,mesh:arch};
+  goal={center:gCenter.clone(),group:gGroup,mesh:beam,halfW,halfH:postTop+2.2};
 
   const g=new THREE.Mesh(new THREE.PlaneGeometry(1400,1400),
     new THREE.MeshLambertMaterial({color:0x9fd888}));
@@ -593,13 +610,22 @@ function buildUntei(seed,pathPts){
   hemi.color.set(0xdff3ff); hemi.groundColor.set(0x6fae5e);
 }
 
-function buildStartPad(){
+function buildStartPad(padY){
+  padY=padY||10;
   const pad=new THREE.Mesh(new THREE.CylinderGeometry(4,4.5,1.2,16),
     new THREE.MeshLambertMaterial({color:0x5fd48a}));
-  pad.position.set(0,10,-10); stageGroup.add(pad);
+  pad.position.set(0,padY,-10); stageGroup.add(pad);
   const b=new CANNON.Body({mass:0,shape:new CANNON.Cylinder(4,4.5,1.2,12)});
-  b.position.set(0,10,-10); world.addBody(b); stageBodies.push(b);
-  startPos.set(0,11.4,-10);
+  b.position.set(0,padY,-10); world.addBody(b); stageBodies.push(b);
+  if(padY>15){
+    // ビルぐらいの高さのときは支柱を見せて高さを感じられるようにする
+    const support=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.8,padY-1,10),
+      new THREE.MeshLambertMaterial({color:0xb7c9e0}));
+    support.position.set(0,(padY-1)/2,-10); stageGroup.add(support);
+    const supportBody=new CANNON.Body({mass:0,shape:new CANNON.Cylinder(1.4,1.8,padY-1,10)});
+    supportBody.position.set(0,(padY-1)/2,-10); world.addBody(supportBody); stageBodies.push(supportBody);
+  }
+  startPos.set(0,padY+1.4,-10);
 }
 
 function buildRings(pathPts){
@@ -658,18 +684,20 @@ function buildOrbs(seed,count){
 }
 
 const STAGE_DEFS=[
-  {name:'ステージ1 うんてい', env:'untei', seed:101, n:8, spacing:15, amp:12, hBase:14, hVar:3},
+  {name:'ステージ1 うんてい', env:'untei', seed:101, n:8, spacing:16, amp:13, hBase:30, hVar:6, countdown:true, timeLimit:90},
   {name:'ステージ2 ビルのたに', env:'city',  seed:202, n:10, turn:1.15, hMin:12, hMax:32},
   {name:'ステージ3 けいこく', env:'canyon', seed:303, n:10, turn:0.9,  hMin:16, hMax:40},
 ];
 
 function loadStage(mode,stageIdx){
   clearStage();
+  let padY=10;
   if(mode==='ta'){
     const def=STAGE_DEFS[stageIdx];
     if(def.env==='untei'){
       const pts=makeZigzagPath(def.seed,def.n,def.spacing,def.amp,def.hBase,def.hVar);
       buildUntei(def.seed+7,pts);          // ゴール方式：浮島の精密判定はナシ
+      padY=def.hBase-2;                    // スタート台もビルぐらいの高さに
     }else{
       const pts=makeRingPath(def.seed,def.n,def.turn,def.hMin,def.hMax);
       if(def.env==='city') buildCity(def.seed+7,pts); else buildCanyon(def.seed+7,pts);
@@ -680,7 +708,7 @@ function loadStage(mode,stageIdx){
     buildCity(507,pts);
     buildOrbs(510,45);
   }
-  buildStartPad();
+  buildStartPad(padY);
 }
 
 /* =========================================================
@@ -692,7 +720,7 @@ const S={ state:'title', mode:'ta', stageIdx:0,
   steer:0, faceDir:new THREE.Vector3(0,0,-1), camMode:'tps',
   fov:64, roll:0, bodyLean:0, missT:0, retryT:0, lastCP:new THREE.Vector3(),
   spinning:false, spinT:0, spinDur:0, spinTotal:0,
-  combo:0, comboMax:0, introT:0 };
+  combo:0, comboMax:0, introT:0, groundAttachT:-1, prevZ:null };
 
 const el={
   hud:document.getElementById('hud'), hudMain:document.getElementById('hudMain'),
@@ -742,8 +770,9 @@ function resetPlayer(pos){
 function startGame(mode,stageIdx){
   S.mode=mode; S.stageIdx=stageIdx;
   loadStage(mode,stageIdx);
-  S.time=(mode==='ta')?0:S.timeLimit;
-  S.ringIdx=0; S.orbCount=0; S.combo=0; S.comboMax=0; S.introT=1.7;
+  const stageDef=(mode==='ta')?STAGE_DEFS[stageIdx]:null;
+  S.time=(mode==='ta')?(stageDef&&stageDef.countdown?stageDef.timeLimit:0):S.timeLimit;
+  S.ringIdx=0; S.orbCount=0; S.combo=0; S.comboMax=0; S.introT=1.7; S.prevZ=null;
   S.lastCP.copy(startPos);
   resetPlayer(startPos);
   S.faceDir.set(0,0,-1);
@@ -764,7 +793,28 @@ function finishGame(cleared){
   S.state='result'; releaseRope();
   el.marker.style.display='none'; el.missMsg.style.display='none'; el.popup.style.display='none';
   const comboLine=S.comboMax>=2?'<br>🔥さいだいコンボ x'+S.comboMax:'';
-  if(S.mode==='ta'){
+  const stageDef=(S.mode==='ta')?STAGE_DEFS[S.stageIdx]:null;
+  const isCountdown=stageDef&&stageDef.countdown;
+  if(S.mode==='ta'&&isCountdown){
+    if(!cleared){
+      el.resTitle.textContent='⏰ タイムアップ！';
+      el.resScore.textContent='ゴールできず…';
+      el.resBest.innerHTML='もういちど ちょうせんしよう！'+comboLine;
+      sfx.timeup();
+    }else{
+      el.resTitle.textContent='🏁 ゴール！';
+      el.resScore.textContent='のこり '+fmtTime(S.time);
+      const key='swing_ta_'+S.stageIdx;
+      const best=parseFloat(store.get(key)||'-1');
+      if(S.time>best){
+        store.set(key,S.time);
+        el.resBest.innerHTML='<span class="newRec">★ しんきろく！ ★</span>'+comboLine;
+      }else{
+        el.resBest.innerHTML='ベスト のこり時間：'+fmtTime(best)+comboLine;
+      }
+      sfx.fanfare();
+    }
+  }else if(S.mode==='ta'){
     el.resTitle.textContent='🏁 クリア！';
     el.resScore.textContent=fmtTime(S.time);
     const key='swing_ta_'+S.stageIdx;
@@ -795,7 +845,9 @@ function finishGame(cleared){
 /* =========================================================
    糸（スイング）システム
 ========================================================= */
-const tmpV1=new THREE.Vector3(), tmpV2=new THREE.Vector3(), tmpV3=new THREE.Vector3(), tmpV4=new THREE.Vector3();
+const tmpV1=new THREE.Vector3(), tmpV2=new THREE.Vector3(), tmpV3=new THREE.Vector3(), tmpV4=new THREE.Vector3(), tmpHand=new THREE.Vector3();
+const rAxisX=new THREE.Vector3(), rAxisY=new THREE.Vector3(), rAxisZ=new THREE.Vector3();
+const rMat=new THREE.Matrix4(), rQuat=new THREE.Quaternion(), rPrevFwd=new THREE.Vector3(0,0,-1);
 
 function pickAnchor(){
   // 照準方向：俯瞰時はキャラの向き、それ以外はカメラ前方＋速度方向のブレンド
@@ -850,6 +902,8 @@ function attachRope(anchor){
   playerBody.velocity.x+=dir.x*5;
   playerBody.velocity.y+=Math.max(dir.y,0.35)*6;
   playerBody.velocity.z+=dir.z*5;
+  // 地面ちかくでつかんだら、3秒以内に確実に浮き上がれるよう補助タイマーを起動
+  S.groundAttachT=(playerBody.position.y<3.5)?0:-1;
   sfx.hit();
 }
 function releaseRope(boost){
@@ -870,6 +924,7 @@ function releaseRope(boost){
     S.spinTotal=flips*Math.PI*2*(Math.random()<0.5?1:-1);
   }
   S.attached=false;
+  S.groundAttachT=-1;
   ropeLine.visible=false;
 }
 function tryAttach(){
@@ -1097,6 +1152,16 @@ function animate(){
         const minLen=Math.max(6,S.restLen*0.45);
         S.restLen=Math.max(minLen,S.restLen-4.2*dt);
         S.constraint.distance=S.restLen;
+        // 地面ちかくでつかんだ場合：3秒以内にかならず浮き上がる補助力
+        if(S.groundAttachT>=0){
+          S.groundAttachT+=dt;
+          if(playerBody.position.y<4.5&&S.groundAttachT<3){
+            const t=clamp(S.groundAttachT/3,0,1);
+            playerBody.velocity.y+=lerp(20,9,t)*dt;
+          }else{
+            S.groundAttachT=-1;
+          }
+        }
         // 接線方向アシスト（スイングを気持ちよく伸ばす）
         const v=playerBody.velocity, sp=v.length();
         if(sp>1&&sp<30){
@@ -1122,10 +1187,19 @@ function animate(){
 
       // ---- ゲーム進行 ----
       if(S.mode==='ta'){
-        S.time+=dt;
+        const stageDef=STAGE_DEFS[S.stageIdx];
+        const isCountdown=stageDef&&stageDef.countdown;
+        if(isCountdown) S.time=Math.max(0,S.time-dt); else S.time+=dt;
         if(goal){
-          if(player.position.distanceTo(goal.center)<13.0){
-            finishGame(true);
+          const pz=player.position.z;
+          if(S.prevZ===null){ S.prevZ=pz; }
+          else{
+            if(S.prevZ>goal.center.z&&pz<=goal.center.z){
+              const dx=Math.abs(player.position.x-goal.center.x);
+              const dy=Math.abs(player.position.y-goal.center.y);
+              if(dx<goal.halfW+1.5&&dy<goal.halfH) finishGame(true);
+            }
+            S.prevZ=pz;
           }
         }else{
         const ring=rings[S.ringIdx];
@@ -1142,6 +1216,7 @@ function animate(){
           if(S.ringIdx>=rings.length) finishGame(true);
         }
         }
+        if(isCountdown&&S.time<=0){ S.time=0; finishGame(false); }
       }else{
         S.time-=dt;
         for(const o of orbs){
@@ -1175,16 +1250,40 @@ function animate(){
     // ---- 見た目の同期 ----
     player.position.copy(playerBody.position);
     player.visible=!(S.state==='play'&&S.camMode==='fps');
-    // キャラの向き：進行方向を向く（顔は画面奥／カメラと反対側）
-    tmpV1.copy(player.position).add(S.faceDir);
-    player.lookAt(tmpV1);
-    player.rotateY(Math.PI);
-    // スイング中はヒモに引っぱられて体も少し傾く
-    {
-      const vv=playerBody.velocity;
+    // キャラの向き
+    if(S.attached){
+      // 飛んでいる間：頭からつま先まで、ヒモの延長線上にくるよう体をあわせる
+      rAxisY.set(anchorBody.position.x-player.position.x,
+                 anchorBody.position.y-player.position.y,
+                 anchorBody.position.z-player.position.z);
+      if(rAxisY.lengthSq()>0.0004){
+        rAxisY.normalize();
+        tmpV2.copy(S.faceDir).addScaledVector(rAxisY,-S.faceDir.dot(rAxisY));
+        if(tmpV2.lengthSq()<0.02){
+          tmpV2.copy(rPrevFwd).addScaledVector(rAxisY,-rPrevFwd.dot(rAxisY));
+        }
+        if(tmpV2.lengthSq()<0.02){
+          tmpV2.set(0,0,-1).addScaledVector(rAxisY,0.999*rAxisY.z);
+        }
+        tmpV2.normalize();
+        rPrevFwd.copy(tmpV2);
+        rAxisZ.copy(tmpV2).negate();             // ローカル+Z＝うしろ
+        rAxisX.crossVectors(rAxisY,rAxisZ).normalize();
+        rAxisZ.crossVectors(rAxisX,rAxisY).normalize();
+        rMat.makeBasis(rAxisX,rAxisY,rAxisZ);
+        rQuat.setFromRotationMatrix(rMat);
+        player.quaternion.slerp(rQuat,1-Math.exp(-11*dt));
+      }
+    }else{
+      // 地上・自由飛行中：進行方向を向く（顔は画面奥／カメラと反対側）
+      tmpV1.copy(player.position).add(S.faceDir);
+      player.lookAt(tmpV1);
+      player.rotateY(Math.PI);
+      // ちょっとした横ゆれ
       tmpV4.set(-S.faceDir.z,0,S.faceDir.x);
+      const vv=playerBody.velocity;
       const lat=vv.x*tmpV4.x+vv.z*tmpV4.z;
-      const targetLean=S.attached?clamp(lat*0.045,-0.55,0.55):0;
+      const targetLean=clamp(lat*0.03,-0.35,0.35);
       S.bodyLean=lerp(S.bodyLean,targetLean,1-Math.exp(-6*dt));
       player.rotateZ(S.bodyLean);
     }
@@ -1198,7 +1297,8 @@ function animate(){
     }
     if(S.attached){
       const pos=ropeGeom.attributes.position.array;
-      pos[0]=player.position.x; pos[1]=player.position.y+0.3; pos[2]=player.position.z;
+      tmpHand.copy(HAND_OFFSET).applyQuaternion(player.quaternion).add(player.position);
+      pos[0]=tmpHand.x; pos[1]=tmpHand.y; pos[2]=tmpHand.z;
       pos[3]=anchorBody.position.x; pos[4]=anchorBody.position.y; pos[5]=anchorBody.position.z;
       ropeGeom.attributes.position.needsUpdate=true;
     }
